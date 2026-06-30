@@ -8,3 +8,6 @@ https://olgamuss.github.io/Human-and-artificial-intelligence-workshop/workshop_h
 
 ## Firebase console
 https://console.firebase.google.com/project/human-and-ai-workshop/firestore
+
+## github
+https://github.com/OlgaMuss/Human-and-artificial-intelligence-workshop/settings/pages 
