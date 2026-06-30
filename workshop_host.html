@@ -4,55 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>H&A Workshop  Host</title>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js">
-// Sessions panel
-function toggleSessionsPanel() {
-  const panel = document.getElementById('sessions-panel');
-  panel.classList.toggle('open');
-  if (panel.classList.contains('open')) loadSessionsList();
-}
-
-function loadSessionsList() {
-  db.collection('sessions').get().then(snap => {
-    const sessions = snap.docs.map(d => d.data())
-      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    renderSessionsList(sessions);
-  }).catch(console.error);
-}
-
-function renderSessionsList(sessions) {
-  const list = document.getElementById('sessions-list');
-  if (sessions.length === 0) {
-    list.innerHTML = '<p class="sessions-empty">No saved sessions yet.</p>';
-    return;
-  }
-  list.innerHTML = sessions.map(s => {
-    const done  = (s.doneCards || []).length;
-    const total = done + (s.todoCards || []).length + (s.activeCardId ? 1 : 0);
-    const date  = s.createdAt?.toDate
-      ? s.createdAt.toDate().toLocaleString()
-      : s.sessionId.slice(1);
-    const isActive = s.sessionId === session?.sessionId;
-    return `<div class="session-item${isActive ? ' active-session' : ''}" onclick="openSession('${s.sessionId}')">
-      <div class="s-label">${date}${isActive ? '  (current)' : ''}</div>
-      <div class="s-meta">${done} / ${total} cards done${s.sessionEnded ? ' · ended' : ' · in progress'}</div>
-    </div>`;
-  }).join('');
-}
-
-function openSession(sid) {
-  db.collection('sessions').doc(sid).get().then(snap => {
-    if (!snap.exists) return;
-    const saved = snap.data();
-    db.collection('session').doc('main').set({
-      ...saved,
-      sessionEnded: false,
-    }).catch(console.error);
-    document.getElementById('sessions-panel').classList.remove('open');
-  }).catch(console.error);
-}
-
-</script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
   <style>
@@ -229,7 +181,7 @@ function openSession(sid) {
       position: fixed; bottom: 52px; left: 10px;
       background: #16213e; border: 1px solid #0f3460; border-radius: 10px;
       padding: 14px; min-width: 300px; max-height: 340px;
-      overflow-y: auto; z-index: 150; display: none;
+      overflow-y: auto; z-index: 250; display: none;
       box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     }
     .sessions-panel.open { display: block; }
@@ -252,6 +204,17 @@ function openSession(sid) {
 <div id="zoom-modal" class="zoom-modal hidden" onclick="closeZoom()">
   <button class="zoom-close" onclick="closeZoom()">?</button>
   <img id="zoom-img" src="" alt="">
+</div>
+
+<!-- No-session overlay -->
+<div id="no-session-overlay" class="overlay">
+  <div class="init-box">
+    <h2>Workshop Host</h2>
+    <p>No active session. Start a new one or reload a previous session.</p>
+    <button class="btn btn-start" onclick="toggleSession()" style="margin-bottom:10px">Start New Session</button>
+    <br>
+    <button class="btn btn-sessions" onclick="toggleSessionsPanel()">View Past Sessions</button>
+  </div>
 </div>
 
 <!-- Resource cards bar -->
@@ -408,6 +371,13 @@ function toggleSession() {
 }
 
 function initSession() {
+  // Immediately clear visible state while new session writes to Firestore
+  comments = [];
+  votes = { highRisk: 0, itDepends: 0, beneficial: 0 };
+  renderComments();
+  renderVoteBars();
+  scheduleWordCloud();
+
   // Archive current session before overwriting
   if (session?.sessionId) {
     db.collection('sessions').doc(session.sessionId)
@@ -416,12 +386,13 @@ function initSession() {
   }
 
   const sessionId = 'S' + Date.now();
+  const [firstCard, ...restCards] = CARD_ORDER;
   const newSession = {
     sessionId,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    activeCardId: null,
+    activeCardId: firstCard,
     revealVotes:  false,
-    todoCards:    [...CARD_ORDER],
+    todoCards:    restCards,
     doneCards:    [],
     sessionEnded: false,
   };
@@ -495,9 +466,11 @@ function loadActiveCard(id) {
     if (ordered) query = query.orderBy('ts', 'asc');
     commentUnsub = query.onSnapshot(
       snap => {
+        // Read sessionId live from session (not from closure) to always match the current session
+        const currentSessionId = session?.sessionId;
         comments = snap.docs
           .map(d => d.data())
-          .filter(d => !d.sessionId || d.sessionId === sessionId)
+          .filter(d => currentSessionId && d.sessionId === currentSessionId)
           .map(d => d.text || '');
         renderComments();
         scheduleWordCloud();
@@ -547,6 +520,10 @@ function renderControls() {
     sessionBtn.textContent  = 'Start Session';
     sessionBtn.className    = 'btn btn-start';
   }
+
+  // Show overlay when no active session
+  const overlay = document.getElementById('no-session-overlay');
+  if (overlay) overlay.classList.toggle('hidden', hasSession);
 
   document.getElementById('btn-reveal').disabled = !hasActive;
   document.getElementById('btn-next').disabled   = !hasActive;
@@ -727,6 +704,54 @@ function escapeHtml(s) {
 
 // Re-render word cloud on window resize
 window.addEventListener('resize', () => { wcDirty = true; scheduleWordCloud(); });
+
+// Sessions panel
+function toggleSessionsPanel() {
+  const panel = document.getElementById('sessions-panel');
+  const isOpen = panel.style.display === 'block';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) loadSessionsList();
+}
+
+function loadSessionsList() {
+  db.collection('sessions').get().then(snap => {
+    const sessions = snap.docs.map(d => d.data())
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    renderSessionsList(sessions);
+  }).catch(console.error);
+}
+
+function renderSessionsList(sessions) {
+  const list = document.getElementById('sessions-list');
+  if (sessions.length === 0) {
+    list.innerHTML = '<p class="sessions-empty">No saved sessions yet.</p>';
+    return;
+  }
+  list.innerHTML = sessions.map(s => {
+    const done  = (s.doneCards || []).length;
+    const total = done + (s.todoCards || []).length + (s.activeCardId ? 1 : 0);
+    const date  = s.createdAt?.toDate
+      ? s.createdAt.toDate().toLocaleString()
+      : s.sessionId.slice(1);
+    const isActive = s.sessionId === session?.sessionId;
+    return `<div class="session-item${isActive ? ' active-session' : ''}" onclick="openSession('${s.sessionId}')">
+      <div class="s-label">${date}${isActive ? '  (current)' : ''}</div>
+      <div class="s-meta">${done} / ${total} cards done${s.sessionEnded ? ' · ended' : ' · in progress'}</div>
+    </div>`;
+  }).join('');
+}
+
+function openSession(sid) {
+  db.collection('sessions').doc(sid).get().then(snap => {
+    if (!snap.exists) return;
+    const saved = snap.data();
+    db.collection('session').doc('main').set({
+      ...saved,
+      sessionEnded: false,
+    }).catch(console.error);
+    document.getElementById('sessions-panel').style.display = 'none';
+  }).catch(console.error);
+}
 </script>
 
 <!-- Sessions panel -->
