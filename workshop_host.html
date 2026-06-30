@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>H&A Workshop ù Host</title>
+  <title>H&A Workshop  Host</title>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
@@ -142,7 +142,8 @@
     .btn:disabled { opacity: 0.35; cursor: default; }
     .btn-reveal { background: #f39c12; color: #fff; }
     .btn-next   { background: #27ae60; color: #fff; }
-    .btn-init   { background: #5c6bc0; color: #fff; }
+    .btn-start  { background: #5c6bc0; color: #fff; }
+    .btn-end    { background: #e74c3c; color: #fff; }
     .controls-info { font-size: 12px; color: #555; margin-left: auto; }
 
     /* ?? Init overlay ?????????????????????????????????? */
@@ -177,14 +178,6 @@
 </head>
 <body>
 
-<!-- Init overlay (shown until session initialized) -->
-<div id="init-overlay" class="overlay">
-  <div class="init-box">
-    <h2>?? H&A Workshop</h2>
-    <p>Initialize a new session to start. This resets all previous votes and comments.</p>
-    <button class="btn btn-init" onclick="initSession()">Initialize Session</button>
-  </div>
-</div>
 
 <!-- Zoom modal for resource cards -->
 <div id="zoom-modal" class="zoom-modal hidden" onclick="closeZoom()">
@@ -239,7 +232,7 @@
     <div class="feedback-zone">
       <div class="comments-panel">
         <div class="panel-label">Comments (<span id="comment-count">0</span>)</div>
-        <div id="comments-list"><p class="no-comments">No comments yetù</p></div>
+        <div id="comments-list"><p class="no-comments">No comments yet</p></div>
       </div>
       <div class="wordcloud-panel">
         <div class="panel-label">Word Cloud</div>
@@ -259,14 +252,15 @@
 
 <!-- Controls -->
 <div class="controls">
-  <button id="btn-reveal" class="btn btn-reveal" onclick="toggleReveal()" disabled>Reveal Votes</button>
-  <button id="btn-next"   class="btn btn-next"   onclick="nextCard()"     disabled>Mark as Done ? Next</button>
+  <button id="btn-session" class="btn btn-start" onclick="toggleSession()">Start Session</button>
+  <button id="btn-reveal"  class="btn btn-reveal" onclick="toggleReveal()" disabled>Reveal Votes</button>
+  <button id="btn-next"    class="btn btn-next"   onclick="nextCard()"     disabled>Mark as Done - Next</button>
   <span class="controls-info" id="controls-info"></span>
 </div>
 
 <script>
 // ?? FIREBASE CONFIG ???????????????????????????????????????????????????????????
-// Same config as vote page ù fill in your Firebase project details.
+// Same config as vote page  fill in your Firebase project details.
 const firebaseConfig = {
   apiKey:            "AIzaSyAQqNOABaF2IIYe28zxKnjHHZRCn6tZPlw",
   authDomain:        "human-and-ai-workshop.firebaseapp.com",
@@ -331,27 +325,34 @@ let commentUnsub  = null;
 let wcDirty       = false;
 let wcTimer       = null;
 
-// ?? Boot ??????????????????????????????????????????????????????????????????????
-db.collection('session').doc('main').get().then(snap => {
-  if (snap.exists) {
-    document.getElementById('init-overlay').classList.add('hidden');
-    startListeners();
-  }
-  // else: overlay stays visible until user clicks Initialize
-}).catch(console.error);
-
+// Boot
 buildResourceBar();
+startListeners();
 
-// ?? Session init ??????????????????????????????????????????????????????????????
+function toggleSession() {
+  if (!session || session.sessionEnded) {
+    initSession();
+  } else {
+    endSession();
+  }
+}
+
 function initSession() {
+  const sessionId = 'S' + Date.now();
   db.collection('session').doc('main').set({
+    sessionId,
     activeCardId: null,
     revealVotes:  false,
     todoCards:    [...CARD_ORDER],
     doneCards:    [],
-  }).then(() => {
-    document.getElementById('init-overlay').classList.add('hidden');
-    startListeners();
+    sessionEnded: false,
+  }).catch(console.error);
+}
+
+function endSession() {
+  db.collection('session').doc('main').update({
+    activeCardId: null,
+    sessionEnded: true,
   }).catch(console.error);
 }
 
@@ -376,7 +377,7 @@ function loadActiveCard(id) {
   wrap.dataset.cardId = id || '';
   wrap.innerHTML = id
     ? `<img src="${CARD_IMG(id)}" alt="${id}">`
-    : `<div class="placeholder">No active card ù click one in the To Do queue</div>`;
+    : `<div class="placeholder">No active card  click one in the To Do queue</div>`;
 
   // Reset per-card state
   votes    = { highRisk: 0, itDepends: 0, beneficial: 0 };
@@ -392,25 +393,30 @@ function loadActiveCard(id) {
   if (!id) return;
 
   // Votes
-  voteUnsub = db.collection('votes').doc(id).onSnapshot(snap => {
+  const sessionId = session?.sessionId || 'default';
+
+  // Votes keyed by sessionId so each session starts fresh
+  voteUnsub = db.collection('votes').doc(sessionId + '_' + id).onSnapshot(snap => {
     const d = snap.data() || {};
     votes = { highRisk: d.highRisk || 0, itDepends: d.itDepends || 0, beneficial: d.beneficial || 0 };
     renderVoteBars();
   });
 
-  // Comments (ordered; falls back without orderBy if index not yet ready)
+  // Comments filtered client-side by sessionId (avoids extra Firestore index)
   const attachCommentListener = (ordered) => {
     let query = db.collection('comments').where('cardId', '==', id);
     if (ordered) query = query.orderBy('ts', 'asc');
     commentUnsub = query.onSnapshot(
       snap => {
-        comments = snap.docs.map(d => d.data().text || '');
+        comments = snap.docs
+          .map(d => d.data())
+          .filter(d => !d.sessionId || d.sessionId === sessionId)
+          .map(d => d.text || '');
         renderComments();
         scheduleWordCloud();
       },
       err => {
         if (ordered && err.code === 'failed-precondition') {
-          // Index not ready yet ó retry without orderBy
           commentUnsub?.();
           attachCommentListener(false);
         } else {
@@ -442,7 +448,19 @@ function renderQueues() {
 }
 
 function renderControls() {
-  const hasActive = !!session?.activeCardId;
+  const hasActive  = !!session?.activeCardId;
+  const hasSession = !!session && !session.sessionEnded;
+
+  // Session toggle button
+  const sessionBtn = document.getElementById('btn-session');
+  if (hasSession) {
+    sessionBtn.textContent  = 'End Session';
+    sessionBtn.className    = 'btn btn-end';
+  } else {
+    sessionBtn.textContent  = 'Start Session';
+    sessionBtn.className    = 'btn btn-start';
+  }
+
   document.getElementById('btn-reveal').disabled = !hasActive;
   document.getElementById('btn-next').disabled   = !hasActive;
 
@@ -457,8 +475,9 @@ function renderControls() {
 
   const todo = session?.todoCards || [];
   const done = session?.doneCards || [];
+  const sessionLabel = session?.sessionId ? `  Session ${session.sessionId.slice(1, 9)}` : '';
   document.getElementById('controls-info').textContent =
-    `${done.length} / ${done.length + todo.length + (session?.activeCardId ? 1 : 0)} cards done`;
+    `${done.length} / ${done.length + todo.length + (hasActive ? 1 : 0)} cards done${sessionLabel}`;
 }
 
 function updateVotePanel() {
@@ -490,7 +509,7 @@ function renderComments() {
   document.getElementById('comment-count').textContent = comments.length;
 
   if (comments.length === 0) {
-    list.innerHTML = '<p class="no-comments">No comments yetù</p>';
+    list.innerHTML = '<p class="no-comments">No comments yet</p>';
     return;
   }
   list.innerHTML = comments
@@ -531,7 +550,7 @@ function renderWordCloud() {
     ctx.fillStyle = '#444';
     ctx.font = '13px system-ui';
     ctx.textAlign = 'center';
-    ctx.fillText('Waiting for commentsù', canvas.width / 2, canvas.height / 2);
+    ctx.fillText('Waiting for comments', canvas.width / 2, canvas.height / 2);
     return;
   }
 

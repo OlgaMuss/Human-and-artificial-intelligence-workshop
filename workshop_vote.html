@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>H&A Workshop ÿ Vote</title>
+  <title>H&A Workshop  Vote</title>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <style>
@@ -115,7 +115,7 @@
 <div id="screen-waiting" class="screen">
   <div class="waiting-box">
     <div class="spinner"></div>
-    <p>Waiting for the next cardÿ</p>
+    <p>Waiting for the next card</p>
   </div>
 </div>
 
@@ -139,7 +139,7 @@
 
   <div class="comment-section">
     <label for="comment-input">Why did you vote this way? (optional)</label>
-    <textarea id="comment-input" placeholder="Share your reasoningÿ"></textarea>
+    <textarea id="comment-input" placeholder="Share your reasoning"></textarea>
     <button class="send-btn" id="send-btn" onclick="submitComment()">Send Comment</button>
     <div id="comment-feedback" class="feedback hidden"></div>
   </div>
@@ -150,7 +150,7 @@
   <div class="done-box">
     <div class="emoji">??</div>
     <h2>Thank you!</h2>
-    <p>All cards have been reviewed.</p>
+    <p>The session has ended. Thank you!</p>
   </div>
 </div>
 
@@ -187,13 +187,23 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 let activeCardId = null;
+let sessionId = 'default';
 
 // ?? Listen for active card changes ????????????????????????????????????????????
 db.collection('session').doc('main').onSnapshot(snap => {
   const data = snap.data();
   if (!data) { show('waiting'); return; }
 
-  const { activeCardId: next, todoCards = [], doneCards = [] } = data;
+  const { activeCardId: next, todoCards = [], doneCards = [], sessionEnded, sessionId: sid } = data;
+
+  // Session ended by host
+  if (sessionEnded) { show('done'); return; }
+
+  // Update sessionId â€” reset localStorage keys if session changed
+  if (sid && sid !== sessionId) {
+    sessionId = sid;
+    activeCardId = null; // force card reload
+  }
 
   if (!next && todoCards.length === 0 && doneCards.length > 0) {
     show('done'); return;
@@ -223,23 +233,23 @@ function loadCard(id) {
   hide('comment-feedback');
 
   // Restore from localStorage if already voted / commented
-  const prevVote = localStorage.getItem('vote:' + id);
+  const prevVote = localStorage.getItem(sessionId + ':vote:' + id);
   if (prevVote) applyVoteUI(prevVote);
 
-  if (localStorage.getItem('comment:' + id)) {
+  if (localStorage.getItem(sessionId + ':comment:' + id)) {
     document.getElementById('send-btn').disabled = true;
     showFeedback('comment-feedback', 'Comment already sent');
   }
 }
 
 function castVote(option) {
-  if (!activeCardId || localStorage.getItem('vote:' + activeCardId)) return;
+  if (!activeCardId || localStorage.getItem(sessionId + ':vote:' + activeCardId)) return;
 
-  db.collection('votes').doc(activeCardId)
+  db.collection('votes').doc(sessionId + '_' + activeCardId)
     .set({ [option]: firebase.firestore.FieldValue.increment(1) }, { merge: true })
     .catch(console.error);
 
-  localStorage.setItem('vote:' + activeCardId, option);
+  localStorage.setItem(sessionId + ':vote:' + activeCardId, option);
   applyVoteUI(option);
 }
 
@@ -256,12 +266,12 @@ function applyVoteUI(option) {
 
 function changeVote() {
   if (!activeCardId) return;
-  const prev = localStorage.getItem('vote:' + activeCardId);
+  const prev = localStorage.getItem(sessionId + ':vote:' + activeCardId);
   if (prev) {
-    db.collection('votes').doc(activeCardId)
+    db.collection('votes').doc(sessionId + '_' + activeCardId)
       .set({ [prev]: firebase.firestore.FieldValue.increment(-1) }, { merge: true })
       .catch(console.error);
-    localStorage.removeItem('vote:' + activeCardId);
+    localStorage.removeItem(sessionId + ':vote:' + activeCardId);
   }
   document.querySelectorAll('.vote-btn').forEach(b => {
     b.disabled = false;
@@ -272,7 +282,7 @@ function changeVote() {
 }
 
 function submitComment() {
-  if (!activeCardId || localStorage.getItem('comment:' + activeCardId)) return;
+  if (!activeCardId || localStorage.getItem(sessionId + ':comment:' + activeCardId)) return;
   const text = document.getElementById('comment-input').value.trim();
   if (!text) return;
 
@@ -281,14 +291,15 @@ function submitComment() {
 
   db.collection('comments').add({
     cardId: activeCardId,
+    sessionId,
     text,
     ts: firebase.firestore.FieldValue.serverTimestamp(),
   }).then(() => {
-    localStorage.setItem('comment:' + activeCardId, '1');
+    localStorage.setItem(sessionId + ':comment:' + activeCardId, '1');
     showFeedback('comment-feedback', 'Comment sent!');
   }).catch(() => {
     btn.disabled = false;
-    showFeedback('comment-feedback', 'Error ÿ please try again');
+    showFeedback('comment-feedback', 'Error  please try again');
   });
 }
 
