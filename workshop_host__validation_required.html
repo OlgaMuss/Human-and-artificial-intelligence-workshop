@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>H&A Workshop ÿ Host</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%; overflow: hidden;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a2e; color: #e0e0e0;
+    }
+
+    /* ?? Layout ???????????????????????????????????????? */
+    body { display: flex; flex-direction: column; }
+
+    .resource-bar {
+      flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px; background: #16213e;
+      border-bottom: 1px solid #0f3460; overflow-x: auto;
+    }
+    .resource-bar .bar-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+      color: #666; white-space: nowrap; flex-shrink: 0;
+    }
+    .resource-thumb {
+      flex-shrink: 0; height: 72px; width: auto; border-radius: 6px;
+      cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s;
+      object-fit: cover;
+    }
+    .resource-thumb:hover { border-color: #7986cb; }
+
+    .main-area {
+      flex: 1; display: grid;
+      grid-template-columns: 180px 1fr 180px;
+      overflow: hidden;
+    }
+
+    /* ?? Queues ???????????????????????????????????????? */
+    .queue {
+      display: flex; flex-direction: column;
+      padding: 10px 8px; overflow-y: auto;
+      background: #16213e; border-right: 1px solid #0f3460;
+    }
+    .queue.done-queue { border-right: none; border-left: 1px solid #0f3460; }
+    .queue-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+      color: #555; margin-bottom: 8px; flex-shrink: 0;
+    }
+    .queue-thumb {
+      width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px;
+      margin-bottom: 8px; opacity: 0.6; cursor: pointer; transition: opacity 0.15s;
+      flex-shrink: 0;
+    }
+    .queue-thumb:hover { opacity: 0.9; }
+    .queue-empty { font-size: 12px; color: #444; text-align: center; margin-top: 20px; }
+
+    /* ?? Center zone ??????????????????????????????????? */
+    .center-zone { display: flex; flex-direction: column; overflow: hidden; }
+
+    .card-and-votes {
+      display: grid; grid-template-columns: 1fr 230px;
+      flex-shrink: 0; height: 260px; border-bottom: 1px solid #0f3460;
+    }
+
+    .card-img-wrap {
+      overflow: hidden; background: #fff;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .card-img-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .card-img-wrap .placeholder {
+      color: #aaa; font-size: 14px; text-align: center; padding: 20px;
+    }
+
+    .vote-panel {
+      padding: 14px 16px; display: flex; flex-direction: column;
+      justify-content: center; gap: 14px; background: #16213e;
+    }
+    .vote-panel-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #555; }
+    .vote-row { }
+    .vote-row-label { font-size: 12px; margin-bottom: 5px; color: #bbb; }
+    .vote-bar-track {
+      background: #0f3460; border-radius: 4px; height: 22px;
+      overflow: hidden; position: relative;
+    }
+    .vote-bar {
+      height: 100%; border-radius: 4px; transition: width 0.5s ease;
+      min-width: 0; display: flex; align-items: center; padding: 0 8px;
+    }
+    .vote-bar span { font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; }
+    .bar-risk       { background: #c0392b; }
+    .bar-depends    { background: #d68910; }
+    .bar-beneficial { background: #1e8449; }
+    .vote-panel.votes-hidden .vote-bar-track { filter: blur(4px); pointer-events: none; }
+
+    /* ?? Feedback zone ????????????????????????????????? */
+    .feedback-zone {
+      flex: 1; display: grid; grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+    }
+
+    .comments-panel {
+      display: flex; flex-direction: column;
+      padding: 10px 12px; overflow: hidden;
+      border-right: 1px solid #0f3460;
+    }
+    .panel-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 8px; flex-shrink: 0; }
+    #comments-list { overflow-y: auto; flex: 1; }
+    .comment-bubble {
+      background: #16213e; border-radius: 8px; padding: 7px 10px;
+      font-size: 12px; color: #ccc; margin-bottom: 6px; line-height: 1.4;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+    .no-comments { font-size: 12px; color: #444; }
+
+    .wordcloud-panel {
+      display: flex; flex-direction: column;
+      padding: 10px 12px; overflow: hidden;
+    }
+    #wordcloud-canvas { flex: 1; width: 100%; background: #1a1a2e; border-radius: 6px; }
+
+    /* ?? Controls bar ?????????????????????????????????? */
+    .controls {
+      flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; background: #16213e; border-top: 1px solid #0f3460;
+    }
+    .btn {
+      padding: 8px 18px; border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.35; cursor: default; }
+    .btn-reveal { background: #f39c12; color: #fff; }
+    .btn-next   { background: #27ae60; color: #fff; }
+    .btn-init   { background: #5c6bc0; color: #fff; }
+    .controls-info { font-size: 12px; color: #555; margin-left: auto; }
+
+    /* ?? Init overlay ?????????????????????????????????? */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(26,26,46,0.96);
+      z-index: 200; display: flex; align-items: center; justify-content: center;
+    }
+    .overlay.hidden { display: none; }
+    .init-box { text-align: center; max-width: 340px; padding: 20px; }
+    .init-box h2 { font-size: 22px; margin-bottom: 8px; }
+    .init-box p  { font-size: 13px; color: #777; margin-bottom: 20px; }
+
+    /* ?? Zoom modal ???????????????????????????????????? */
+    .zoom-modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.88);
+      z-index: 300; display: flex; align-items: center; justify-content: center;
+      cursor: zoom-out;
+    }
+    .zoom-modal.hidden { display: none; }
+    .zoom-modal img { max-width: 92vw; max-height: 92vh; border-radius: 10px; pointer-events: none; }
+    .zoom-close {
+      position: absolute; top: 18px; right: 22px;
+      background: none; border: none; color: #fff; font-size: 30px; cursor: pointer;
+    }
+
+    /* ?? No card placeholder ??????????????????????????? */
+    .no-card-msg {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      color: #444; font-size: 14px; flex-direction: column; gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Init overlay (shown until session initialized) -->
+<div id="init-overlay" class="overlay">
+  <div class="init-box">
+    <h2>?? H&A Workshop</h2>
+    <p>Initialize a new session to start. This resets all previous votes and comments.</p>
+    <button class="btn btn-init" onclick="initSession()">Initialize Session</button>
+  </div>
+</div>
+
+<!-- Zoom modal for resource cards -->
+<div id="zoom-modal" class="zoom-modal hidden" onclick="closeZoom()">
+  <button class="zoom-close" onclick="closeZoom()">?</button>
+  <img id="zoom-img" src="" alt="">
+</div>
+
+<!-- Resource cards bar -->
+<div class="resource-bar" id="resource-bar">
+  <span class="bar-label">Resources</span>
+</div>
+
+<!-- Main 3-column layout -->
+<div class="main-area">
+
+  <!-- TODO queue -->
+  <div class="queue" id="todo-queue">
+    <div class="queue-label">To Do (<span id="todo-count">0</span>)</div>
+    <div id="todo-list"></div>
+  </div>
+
+  <!-- Center: active card + votes + feedback -->
+  <div class="center-zone">
+
+    <div class="card-and-votes">
+      <div class="card-img-wrap" id="card-img-wrap">
+        <div class="placeholder">No active card<br>? Click a card in the queue, or use Next</div>
+      </div>
+      <div class="vote-panel votes-hidden" id="vote-panel">
+        <div class="vote-panel-label">Votes</div>
+        <div class="vote-row">
+          <div class="vote-row-label">?? High Risk</div>
+          <div class="vote-bar-track">
+            <div class="vote-bar bar-risk" id="bar-risk" style="width:0%"><span id="count-risk">0</span></div>
+          </div>
+        </div>
+        <div class="vote-row">
+          <div class="vote-row-label">?? It Depends</div>
+          <div class="vote-bar-track">
+            <div class="vote-bar bar-depends" id="bar-depends" style="width:0%"><span id="count-depends">0</span></div>
+          </div>
+        </div>
+        <div class="vote-row">
+          <div class="vote-row-label">?? Beneficial</div>
+          <div class="vote-bar-track">
+            <div class="vote-bar bar-beneficial" id="bar-benef" style="width:0%"><span id="count-benef">0</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feedback-zone">
+      <div class="comments-panel">
+        <div class="panel-label">Comments (<span id="comment-count">0</span>)</div>
+        <div id="comments-list"><p class="no-comments">No comments yetÿ</p></div>
+      </div>
+      <div class="wordcloud-panel">
+        <div class="panel-label">Word Cloud</div>
+        <canvas id="wordcloud-canvas"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- DONE queue -->
+  <div class="queue done-queue" id="done-queue">
+    <div class="queue-label">Done (<span id="done-count">0</span>)</div>
+    <div id="done-list"></div>
+  </div>
+
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <button id="btn-reveal" class="btn btn-reveal" onclick="toggleReveal()" disabled>Reveal Votes</button>
+  <button id="btn-next"   class="btn btn-next"   onclick="nextCard()"     disabled>Mark as Done ? Next</button>
+  <span class="controls-info" id="controls-info"></span>
+</div>
+
+<script>
+// ?? FIREBASE CONFIG ???????????????????????????????????????????????????????????
+// Same config as vote page ÿ fill in your Firebase project details.
+const firebaseConfig = {
+  apiKey:            "AIzaSyAQqNOABaF2IIYe28zxKnjHHZRCn6tZPlw",
+  authDomain:        "human-and-ai-workshop.firebaseapp.com",
+  projectId:         "human-and-ai-workshop",
+  storageBucket:     "human-and-ai-workshop.firebasestorage.app",
+  messagingSenderId: "268029158724",
+  appId:             "1:268029158724:web:ef58b0fc638e71dfc56311",
+};
+// ?????????????????????????????????????????????????????????????????????????????
+
+const CARD_ORDER = [
+  "A8_AI_reduce_screen_time",
+  "B2_using_AI_to_help_with_homework",
+  "B6_using_AI_to_learn_foreign_language",
+  "B7_AI_choose_who_to_go_out_with",
+  "C3_AI_interpret_baby_cries",
+  "C4_AI_personalized_curriculum",
+  "C5_AI_bedtime_story_podcasts",
+  "D1_AI_practice_difficult_conversation",
+  "D4_AI_companion_to_chat",
+  "D6_AI_robot_emotional_bonding",
+  "D7_AI_stuffed_animals_calm_babies",
+];
+
+const CARD_IMG = id => `Cards/use_case_cards_short/${id}.png`;
+
+const RESOURCE_CARDS = [
+  { id: "A_human_reward_system",            label: "Human Reward System" },
+  { id: "A_reinforcements_in_social_media", label: "Reinforcements in Social Media" },
+  { id: "A_sensitive_periods",              label: "Sensitive Periods" },
+  { id: "A_adolescence_and_rewards",        label: "Adolescence & Rewards" },
+  { id: "A_critical_thinking",              label: "Critical Thinking" },
+  { id: "B_oxytocin_attachment",            label: "Oxytocin & Attachment" },
+  { id: "C_child_development",              label: "Child Development" },
+  { id: "C_anthropomorphic_AI_interaction", label: "Anthropomorphic AI" },
+  { id: "C_anthropomorphism_and_attachment","label": "Anthropomorphism & Attachment" },
+  { id: "E_virtual_reality_augmented_reality", label: "VR & AR" },
+  { id: "F_cognitive_biases",               label: "Cognitive Biases" },
+  { id: "F_bias_in_AI_models",              label: "Bias in AI Models" },
+  { id: "F_technoference",                  label: "Technoference" },
+  { id: "F_adolescence_social_skills",      label: "Adolescence & Social Skills" },
+];
+
+const STOP_WORDS = new Set([
+  "a","an","the","and","or","but","in","on","at","to","for","of","with","by",
+  "is","it","its","be","are","was","were","have","has","had","do","does","did",
+  "this","that","these","those","i","you","we","they","he","she","my","your",
+  "our","not","no","so","as","if","can","will","would","could","should","just",
+  "also","more","very","from","use","using","ai","le","la","les","et","de","du",
+  "un","une","des","il","elle","en","que","qui","ne","pas","je","tu","nous","vous",
+]);
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ?? State ?????????????????????????????????????????????????????????????????????
+let session       = null;
+let votes         = { highRisk: 0, itDepends: 0, beneficial: 0 };
+let comments      = [];
+let voteUnsub     = null;
+let commentUnsub  = null;
+let wcDirty       = false;
+let wcTimer       = null;
+
+// ?? Boot ??????????????????????????????????????????????????????????????????????
+db.collection('session').doc('main').get().then(snap => {
+  if (snap.exists) {
+    document.getElementById('init-overlay').classList.add('hidden');
+    startListeners();
+  }
+  // else: overlay stays visible until user clicks Initialize
+}).catch(console.error);
+
+buildResourceBar();
+
+// ?? Session init ??????????????????????????????????????????????????????????????
+function initSession() {
+  db.collection('session').doc('main').set({
+    activeCardId: null,
+    revealVotes:  false,
+    todoCards:    [...CARD_ORDER],
+    doneCards:    [],
+  }).then(() => {
+    document.getElementById('init-overlay').classList.add('hidden');
+    startListeners();
+  }).catch(console.error);
+}
+
+// ?? Live listeners ????????????????????????????????????????????????????????????
+function startListeners() {
+  db.collection('session').doc('main').onSnapshot(snap => {
+    session = snap.data();
+    if (!session) return;
+    renderQueues();
+    renderControls();
+
+    const prevCard = document.getElementById('card-img-wrap').dataset.cardId;
+    if (session.activeCardId !== prevCard) {
+      loadActiveCard(session.activeCardId);
+    }
+    updateVotePanel();
+  });
+}
+
+function loadActiveCard(id) {
+  const wrap = document.getElementById('card-img-wrap');
+  wrap.dataset.cardId = id || '';
+  wrap.innerHTML = id
+    ? `<img src="${CARD_IMG(id)}" alt="${id}">`
+    : `<div class="placeholder">No active card ÿ click one in the To Do queue</div>`;
+
+  // Reset per-card state
+  votes    = { highRisk: 0, itDepends: 0, beneficial: 0 };
+  comments = [];
+  renderVoteBars();
+  renderComments();
+  scheduleWordCloud();
+
+  // Detach previous listeners
+  voteUnsub?.();
+  commentUnsub?.();
+
+  if (!id) return;
+
+  // Votes
+  voteUnsub = db.collection('votes').doc(id).onSnapshot(snap => {
+    const d = snap.data() || {};
+    votes = { highRisk: d.highRisk || 0, itDepends: d.itDepends || 0, beneficial: d.beneficial || 0 };
+    renderVoteBars();
+  });
+
+  // Comments
+  commentUnsub = db.collection('comments')
+    .where('cardId', '==', id)
+    .orderBy('ts', 'asc')
+    .onSnapshot(snap => {
+      comments = snap.docs.map(d => d.data().text || '');
+      renderComments();
+      scheduleWordCloud();
+    });
+}
+
+// ?? Render helpers ????????????????????????????????????????????????????????????
+function renderQueues() {
+  const todo = session.todoCards || [];
+  const done = session.doneCards || [];
+
+  document.getElementById('todo-count').textContent = todo.length;
+  document.getElementById('done-count').textContent = done.length;
+
+  const todoList = document.getElementById('todo-list');
+  todoList.innerHTML = todo.length === 0
+    ? '<p class="queue-empty">All done!</p>'
+    : todo.map(id => `<img class="queue-thumb" src="${CARD_IMG(id)}" title="${id}" onclick="activateCard('${id}')">`).join('');
+
+  const doneList = document.getElementById('done-list');
+  doneList.innerHTML = done.length === 0
+    ? '<p class="queue-empty">None yet</p>'
+    : done.map(id => `<img class="queue-thumb" src="${CARD_IMG(id)}" title="${id}" style="opacity:0.4;">`).join('');
+}
+
+function renderControls() {
+  const hasActive = !!session?.activeCardId;
+  document.getElementById('btn-reveal').disabled = !hasActive;
+  document.getElementById('btn-next').disabled   = !hasActive;
+
+  const revBtn = document.getElementById('btn-reveal');
+  if (session?.revealVotes) {
+    revBtn.textContent = 'Hide Votes';
+    revBtn.style.background = '#7f8c8d';
+  } else {
+    revBtn.textContent = 'Reveal Votes';
+    revBtn.style.background = '#f39c12';
+  }
+
+  const todo = session?.todoCards || [];
+  const done = session?.doneCards || [];
+  document.getElementById('controls-info').textContent =
+    `${done.length} / ${done.length + todo.length + (session?.activeCardId ? 1 : 0)} cards done`;
+}
+
+function updateVotePanel() {
+  const panel = document.getElementById('vote-panel');
+  if (session?.revealVotes) {
+    panel.classList.remove('votes-hidden');
+  } else {
+    panel.classList.add('votes-hidden');
+  }
+}
+
+function renderVoteBars() {
+  const total = votes.highRisk + votes.itDepends + votes.beneficial || 1;
+  setBar('risk',    votes.highRisk,   total);
+  setBar('depends', votes.itDepends,  total);
+  setBar('benef',   votes.beneficial, total);
+}
+
+function setBar(key, value, total) {
+  const pct = Math.round((value / total) * 100);
+  const bar  = document.getElementById('bar-' + key);
+  const cnt  = document.getElementById('count-' + key);
+  bar.style.width = pct + '%';
+  cnt.textContent = value + ' (' + pct + '%)';
+}
+
+function renderComments() {
+  const list = document.getElementById('comments-list');
+  document.getElementById('comment-count').textContent = comments.length;
+
+  if (comments.length === 0) {
+    list.innerHTML = '<p class="no-comments">No comments yetÿ</p>';
+    return;
+  }
+  list.innerHTML = comments
+    .slice(-60) // show last 60 for performance
+    .map(t => `<div class="comment-bubble">${escapeHtml(t)}</div>`)
+    .join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+function scheduleWordCloud() {
+  wcDirty = true;
+  clearTimeout(wcTimer);
+  wcTimer = setTimeout(renderWordCloud, 800);
+}
+
+function renderWordCloud() {
+  if (!wcDirty) return;
+  wcDirty = false;
+
+  const canvas = document.getElementById('wordcloud-canvas');
+  canvas.width  = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+
+  const freq = {};
+  comments.forEach(text => {
+    text.toLowerCase()
+      .replace(/[^a-zA-Z?-?\s]/g, '')
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !STOP_WORDS.has(w))
+      .forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+  });
+
+  const wordList = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 80);
+
+  if (wordList.length === 0) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#444';
+    ctx.font = '13px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('Waiting for commentsÿ', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+
+  const maxFreq = wordList[0][1];
+  WordCloud(canvas, {
+    list:            wordList,
+    gridSize:        Math.round(canvas.width / 40),
+    weightFactor:    f => Math.max(12, (f / maxFreq) * (canvas.height / 4)),
+    color:           () => `hsl(${220 + Math.random() * 60}, 65%, 65%)`,
+    backgroundColor: '#1a1a2e',
+    rotateRatio:     0.25,
+    shuffle:         false,
+    drawOutOfBound:  false,
+  });
+}
+
+// ?? Controls ??????????????????????????????????????????????????????????????????
+function toggleReveal() {
+  if (!session?.activeCardId) return;
+  db.collection('session').doc('main').update({
+    revealVotes: !session.revealVotes,
+  }).catch(console.error);
+}
+
+function nextCard() {
+  if (!session?.activeCardId) return;
+  const todo = [...(session.todoCards || [])];
+  const done = [...(session.doneCards || []), session.activeCardId];
+  const next = todo.shift() || null;
+
+  db.collection('session').doc('main').update({
+    activeCardId: next,
+    revealVotes:  false,
+    todoCards:    todo,
+    doneCards:    done,
+  }).catch(console.error);
+}
+
+function activateCard(id) {
+  // Move from todo to active (swap if there was already an active card)
+  if (!session) return;
+  const todo = (session.todoCards || []).filter(c => c !== id);
+  const activeWas = session.activeCardId;
+  if (activeWas && activeWas !== id) todo.unshift(activeWas); // push current back
+
+  db.collection('session').doc('main').update({
+    activeCardId: id,
+    revealVotes:  false,
+    todoCards:    todo,
+  }).catch(console.error);
+}
+
+// ?? Resource bar ??????????????????????????????????????????????????????????????
+function buildResourceBar() {
+  const bar = document.getElementById('resource-bar');
+  RESOURCE_CARDS.forEach(({ id, label }) => {
+    const img = document.createElement('img');
+    img.className = 'resource-thumb';
+    img.src   = `Cards/resource_cards/${id}.png`;
+    img.title = label;
+    img.onclick = () => openZoom(`Cards/resource_cards/${id}.png`);
+    bar.appendChild(img);
+  });
+}
+
+function openZoom(src) {
+  document.getElementById('zoom-img').src = src;
+  document.getElementById('zoom-modal').classList.remove('hidden');
+}
+function closeZoom() {
+  document.getElementById('zoom-modal').classList.add('hidden');
+}
+
+// ?? Utils ?????????????????????????????????????????????????????????????????????
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Re-render word cloud on window resize
+window.addEventListener('resize', () => { wcDirty = true; scheduleWordCloud(); });
+</script>
+</body>
+</html>

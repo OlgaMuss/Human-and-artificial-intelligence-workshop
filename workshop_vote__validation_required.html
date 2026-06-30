@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>H&A Workshop ÿ Vote</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+    }
+
+    .screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .screen.hidden { display: none !important; }
+
+    /* ?? Waiting ??????????????????????????????????????? */
+    .waiting-box { text-align: center; color: #777; }
+    .spinner {
+      width: 44px; height: 44px; border-radius: 50%;
+      border: 4px solid #ddd; border-top-color: #5c6bc0;
+      animation: spin 0.9s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .waiting-box p { font-size: 16px; }
+
+    /* ?? Card screen ??????????????????????????????????? */
+    #screen-card {
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      padding: 0;
+      max-width: 480px;
+      width: 100%;
+      margin: 0 auto;
+      background: #fff;
+      min-height: 100vh;
+    }
+
+    .card-img-wrap { background: #f8f8f8; }
+    .card-img-wrap img { width: 100%; display: block; }
+
+    .vote-section { padding: 20px; border-top: 1px solid #eee; }
+    .vote-prompt { font-size: 16px; font-weight: 600; color: #333; margin-bottom: 14px; }
+
+    .vote-btns { display: flex; flex-direction: column; gap: 10px; }
+    .vote-btn {
+      padding: 16px 20px; border: none; border-radius: 12px;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+      transition: transform 0.1s;
+      text-align: left;
+    }
+    .vote-btn:active { transform: scale(0.97); }
+    .vote-btn.risk        { background: #fdecea; color: #c0392b; }
+    .vote-btn.depends     { background: #fef9e7; color: #d68910; }
+    .vote-btn.beneficial  { background: #eafaf1; color: #1e8449; }
+    .vote-btn.selected    { box-shadow: inset 0 0 0 2.5px currentColor; }
+    .vote-btn:disabled    { opacity: 0.5; cursor: default; }
+
+    .feedback {
+      margin-top: 12px; font-size: 14px; text-align: center;
+      padding: 10px; border-radius: 8px; background: #eafaf1; color: #1e8449;
+    }
+    .feedback.hidden { display: none; }
+
+    .comment-section { padding: 20px; border-top: 1px solid #eee; }
+    .comment-section label { font-size: 14px; color: #555; display: block; margin-bottom: 8px; }
+
+    textarea {
+      width: 100%; padding: 12px; border: 1.5px solid #ddd; border-radius: 10px;
+      font-size: 14px; resize: vertical; min-height: 90px; font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { outline: none; border-color: #5c6bc0; }
+
+    .send-btn {
+      margin-top: 10px; width: 100%; padding: 14px;
+      background: #5c6bc0; color: #fff; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.15s;
+    }
+    .send-btn:hover { background: #4a59b0; }
+    .send-btn:disabled { opacity: 0.45; cursor: default; }
+
+    /* ?? Done screen ??????????????????????????????????? */
+    .done-box { text-align: center; }
+    .done-box .emoji { font-size: 52px; margin-bottom: 12px; }
+    .done-box h2 { font-size: 24px; color: #333; margin-bottom: 8px; }
+    .done-box p  { color: #777; font-size: 15px; }
+  </style>
+</head>
+<body>
+
+<!-- Waiting for host to start a card -->
+<div id="screen-waiting" class="screen">
+  <div class="waiting-box">
+    <div class="spinner"></div>
+    <p>Waiting for the next cardÿ</p>
+  </div>
+</div>
+
+<!-- Active card: vote + comment -->
+<div id="screen-card" class="screen hidden">
+  <div class="card-img-wrap">
+    <img id="card-img" src="" alt="Current use case">
+  </div>
+
+  <div class="vote-section">
+    <p class="vote-prompt">What do you think of this use case?</p>
+    <div class="vote-btns">
+      <button class="vote-btn risk"       id="btn-risk"    onclick="castVote('highRisk')">?? High Risk</button>
+      <button class="vote-btn depends"    id="btn-depends" onclick="castVote('itDepends')">?? It Depends</button>
+      <button class="vote-btn beneficial" id="btn-benef"   onclick="castVote('beneficial')">?? Beneficial</button>
+    </div>
+    <div id="vote-feedback" class="feedback hidden"></div>
+  </div>
+
+  <div class="comment-section">
+    <label for="comment-input">Why did you vote this way? (optional)</label>
+    <textarea id="comment-input" placeholder="Share your reasoningÿ"></textarea>
+    <button class="send-btn" id="send-btn" onclick="submitComment()">Send Comment</button>
+    <div id="comment-feedback" class="feedback hidden"></div>
+  </div>
+</div>
+
+<!-- All cards reviewed -->
+<div id="screen-done" class="screen hidden">
+  <div class="done-box">
+    <div class="emoji">??</div>
+    <h2>Thank you!</h2>
+    <p>All cards have been reviewed.</p>
+  </div>
+</div>
+
+<script>
+// ?? FIREBASE CONFIG ???????????????????????????????????????????????????????????
+// 1. Go to https://console.firebase.google.com/
+// 2. Create a project ? Add Web app ? copy the config object below
+// 3. In Firestore ? Rules, set: allow read, write: if true;  (workshop use only)
+const firebaseConfig = {
+  apiKey:            "AIzaSyAQqNOABaF2IIYe28zxKnjHHZRCn6tZPlw",
+  authDomain:        "human-and-ai-workshop.firebaseapp.com",
+  projectId:         "human-and-ai-workshop",
+  storageBucket:     "human-and-ai-workshop.firebasestorage.app",
+  messagingSenderId: "268029158724",
+  appId:             "1:268029158724:web:ef58b0fc638e71dfc56311",
+};
+// ?????????????????????????????????????????????????????????????????????????????
+
+const CARDS = {
+  "A8_AI_reduce_screen_time":              "Cards/use_case_cards_short/A8_AI_reduce_screen_time.png",
+  "B2_using_AI_to_help_with_homework":     "Cards/use_case_cards_short/B2_using_AI_to_help_with_homework.png",
+  "B6_using_AI_to_learn_foreign_language": "Cards/use_case_cards_short/B6_using_AI_to_learn_foreign_language.png",
+  "B7_AI_choose_who_to_go_out_with":       "Cards/use_case_cards_short/B7_AI_choose_who_to_go_out_with.png",
+  "C3_AI_interpret_baby_cries":            "Cards/use_case_cards_short/C3_AI_interpret_baby_cries.png",
+  "C4_AI_personalized_curriculum":         "Cards/use_case_cards_short/C4_AI_personalized_curriculum.png",
+  "C5_AI_bedtime_story_podcasts":          "Cards/use_case_cards_short/C5_AI_bedtime_story_podcasts.png",
+  "D1_AI_practice_difficult_conversation": "Cards/use_case_cards_short/D1_AI_practice_difficult_conversation.png",
+  "D4_AI_companion_to_chat":               "Cards/use_case_cards_short/D4_AI_companion_to_chat.png",
+  "D6_AI_robot_emotional_bonding":         "Cards/use_case_cards_short/D6_AI_robot_emotional_bonding.png",
+  "D7_AI_stuffed_animals_calm_babies":     "Cards/use_case_cards_short/D7_AI_stuffed_animals_calm_babies.png",
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+let activeCardId = null;
+
+// ?? Listen for active card changes ????????????????????????????????????????????
+db.collection('session').doc('main').onSnapshot(snap => {
+  const data = snap.data();
+  if (!data) { show('waiting'); return; }
+
+  const { activeCardId: next, todoCards = [], doneCards = [] } = data;
+
+  if (!next && todoCards.length === 0 && doneCards.length > 0) {
+    show('done'); return;
+  }
+
+  if (next !== activeCardId) {
+    activeCardId = next;
+    activeCardId ? loadCard(activeCardId) : show('waiting');
+  }
+});
+
+function loadCard(id) {
+  const src = CARDS[id];
+  if (!src) { show('waiting'); return; }
+
+  document.getElementById('card-img').src = src;
+  show('card');
+
+  // Reset buttons
+  document.querySelectorAll('.vote-btn').forEach(b => {
+    b.disabled = false;
+    b.classList.remove('selected');
+  });
+  hide('vote-feedback');
+  document.getElementById('comment-input').value = '';
+  document.getElementById('send-btn').disabled = false;
+  hide('comment-feedback');
+
+  // Restore from localStorage if already voted / commented
+  const prevVote = localStorage.getItem('vote:' + id);
+  if (prevVote) applyVoteUI(prevVote);
+
+  if (localStorage.getItem('comment:' + id)) {
+    document.getElementById('send-btn').disabled = true;
+    showFeedback('comment-feedback', '? Comment already sent');
+  }
+}
+
+function castVote(option) {
+  if (!activeCardId || localStorage.getItem('vote:' + activeCardId)) return;
+
+  db.collection('votes').doc(activeCardId)
+    .set({ [option]: firebase.firestore.FieldValue.increment(1) }, { merge: true })
+    .catch(console.error);
+
+  localStorage.setItem('vote:' + activeCardId, option);
+  applyVoteUI(option);
+}
+
+function applyVoteUI(option) {
+  document.querySelectorAll('.vote-btn').forEach(b => b.disabled = true);
+  const map = { highRisk: 'btn-risk', itDepends: 'btn-depends', beneficial: 'btn-benef' };
+  document.getElementById(map[option])?.classList.add('selected');
+  showFeedback('vote-feedback', '? Vote recorded!');
+}
+
+function submitComment() {
+  if (!activeCardId || localStorage.getItem('comment:' + activeCardId)) return;
+  const text = document.getElementById('comment-input').value.trim();
+  if (!text) return;
+
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+
+  db.collection('comments').add({
+    cardId: activeCardId,
+    text,
+    ts: firebase.firestore.FieldValue.serverTimestamp(),
+  }).then(() => {
+    localStorage.setItem('comment:' + activeCardId, '1');
+    showFeedback('comment-feedback', '? Comment sent!');
+  }).catch(() => {
+    btn.disabled = false;
+    showFeedback('comment-feedback', 'Error ÿ please try again');
+  });
+}
+
+// ?? Helpers ???????????????????????????????????????????????????????????????????
+function show(screen) {
+  ['waiting', 'card', 'done'].forEach(s =>
+    document.getElementById('screen-' + s).classList.toggle('hidden', s !== screen)
+  );
+}
+function hide(id)  { document.getElementById(id).classList.add('hidden'); }
+function showFeedback(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+</script>
+</body>
+</html>
