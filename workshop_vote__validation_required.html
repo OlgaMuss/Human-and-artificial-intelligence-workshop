@@ -62,6 +62,22 @@
     .vote-btn.selected    { box-shadow: inset 0 0 0 2.5px currentColor; }
     .vote-btn:disabled    { opacity: 0.5; cursor: default; }
 
+    .vote-dot {
+      display: inline-block; width: 12px; height: 12px;
+      border-radius: 50%; margin-right: 10px; flex-shrink: 0;
+    }
+    .risk .vote-dot       { background: #c0392b; }
+    .depends .vote-dot    { background: #d68910; }
+    .beneficial .vote-dot { background: #1e8449; }
+
+    .vote-subtitle { font-size: 13px; color: #999; margin-bottom: 14px; }
+
+    .change-vote-btn {
+      margin-top: 10px; background: none; border: none;
+      color: #5c6bc0; font-size: 13px; cursor: pointer;
+      text-decoration: underline; display: none; padding: 0;
+    }
+
     .feedback {
       margin-top: 12px; font-size: 14px; text-align: center;
       padding: 10px; border-radius: 8px; background: #eafaf1; color: #1e8449;
@@ -111,12 +127,14 @@
 
   <div class="vote-section">
     <p class="vote-prompt">What do you think of this use case?</p>
+    <p class="vote-subtitle">Select one</p>
     <div class="vote-btns">
-      <button class="vote-btn risk"       id="btn-risk"    onclick="castVote('highRisk')">?? High Risk</button>
-      <button class="vote-btn depends"    id="btn-depends" onclick="castVote('itDepends')">?? It Depends</button>
-      <button class="vote-btn beneficial" id="btn-benef"   onclick="castVote('beneficial')">?? Beneficial</button>
+      <button class="vote-btn risk"       id="btn-risk"    onclick="castVote('highRisk')"><span class="vote-dot"></span>High Risk</button>
+      <button class="vote-btn depends"    id="btn-depends" onclick="castVote('itDepends')"><span class="vote-dot"></span>It Depends</button>
+      <button class="vote-btn beneficial" id="btn-benef"   onclick="castVote('beneficial')"><span class="vote-dot"></span>Beneficial</button>
     </div>
     <div id="vote-feedback" class="feedback hidden"></div>
+    <button class="change-vote-btn" id="change-vote-btn" onclick="changeVote()">Change my vote</button>
   </div>
 
   <div class="comment-section">
@@ -210,7 +228,7 @@ function loadCard(id) {
 
   if (localStorage.getItem('comment:' + id)) {
     document.getElementById('send-btn').disabled = true;
-    showFeedback('comment-feedback', '? Comment already sent');
+    showFeedback('comment-feedback', 'Comment already sent');
   }
 }
 
@@ -226,10 +244,31 @@ function castVote(option) {
 }
 
 function applyVoteUI(option) {
-  document.querySelectorAll('.vote-btn').forEach(b => b.disabled = true);
+  document.querySelectorAll('.vote-btn').forEach(b => {
+    b.disabled = true;
+    b.classList.remove('selected');
+  });
   const map = { highRisk: 'btn-risk', itDepends: 'btn-depends', beneficial: 'btn-benef' };
   document.getElementById(map[option])?.classList.add('selected');
-  showFeedback('vote-feedback', '? Vote recorded!');
+  showFeedback('vote-feedback', 'Vote recorded!');
+  document.getElementById('change-vote-btn').style.display = 'block';
+}
+
+function changeVote() {
+  if (!activeCardId) return;
+  const prev = localStorage.getItem('vote:' + activeCardId);
+  if (prev) {
+    db.collection('votes').doc(activeCardId)
+      .set({ [prev]: firebase.firestore.FieldValue.increment(-1) }, { merge: true })
+      .catch(console.error);
+    localStorage.removeItem('vote:' + activeCardId);
+  }
+  document.querySelectorAll('.vote-btn').forEach(b => {
+    b.disabled = false;
+    b.classList.remove('selected');
+  });
+  hide('vote-feedback');
+  document.getElementById('change-vote-btn').style.display = 'none';
 }
 
 function submitComment() {
@@ -246,7 +285,7 @@ function submitComment() {
     ts: firebase.firestore.FieldValue.serverTimestamp(),
   }).then(() => {
     localStorage.setItem('comment:' + activeCardId, '1');
-    showFeedback('comment-feedback', '? Comment sent!');
+    showFeedback('comment-feedback', 'Comment sent!');
   }).catch(() => {
     btn.disabled = false;
     showFeedback('comment-feedback', 'Error ÿ please try again');
