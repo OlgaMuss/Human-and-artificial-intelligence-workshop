@@ -98,7 +98,9 @@
     .bar-risk       { background: #c0392b; }
     .bar-depends    { background: #d68910; }
     .bar-beneficial { background: #1e8449; }
-    .vote-panel.votes-hidden .vote-bar-track { filter: blur(4px); pointer-events: none; }
+    .vote-panel.votes-hidden .vote-bar-track { visibility: hidden; }
+    .vote-panel.votes-hidden .vote-row-label { visibility: hidden; }
+    .vote-panel.votes-hidden .vote-panel-label::after { content: ' (hidden)'; color: #555; font-size: 10px; }
 
     /* ?? Feedback zone ????????????????????????????????? */
     .feedback-zone {
@@ -214,19 +216,19 @@
       <div class="vote-panel votes-hidden" id="vote-panel">
         <div class="vote-panel-label">Votes</div>
         <div class="vote-row">
-          <div class="vote-row-label">?? High Risk</div>
+          <div class="vote-row-label">High Risk</div>
           <div class="vote-bar-track">
             <div class="vote-bar bar-risk" id="bar-risk" style="width:0%"><span id="count-risk">0</span></div>
           </div>
         </div>
         <div class="vote-row">
-          <div class="vote-row-label">?? It Depends</div>
+          <div class="vote-row-label">It Depends</div>
           <div class="vote-bar-track">
             <div class="vote-bar bar-depends" id="bar-depends" style="width:0%"><span id="count-depends">0</span></div>
           </div>
         </div>
         <div class="vote-row">
-          <div class="vote-row-label">?? Beneficial</div>
+          <div class="vote-row-label">Beneficial</div>
           <div class="vote-bar-track">
             <div class="vote-bar bar-beneficial" id="bar-benef" style="width:0%"><span id="count-benef">0</span></div>
           </div>
