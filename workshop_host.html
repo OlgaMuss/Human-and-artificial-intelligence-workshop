@@ -398,15 +398,28 @@ function loadActiveCard(id) {
     renderVoteBars();
   });
 
-  // Comments
-  commentUnsub = db.collection('comments')
-    .where('cardId', '==', id)
-    .orderBy('ts', 'asc')
-    .onSnapshot(snap => {
-      comments = snap.docs.map(d => d.data().text || '');
-      renderComments();
-      scheduleWordCloud();
-    });
+  // Comments (ordered; falls back without orderBy if index not yet ready)
+  const attachCommentListener = (ordered) => {
+    let query = db.collection('comments').where('cardId', '==', id);
+    if (ordered) query = query.orderBy('ts', 'asc');
+    commentUnsub = query.onSnapshot(
+      snap => {
+        comments = snap.docs.map(d => d.data().text || '');
+        renderComments();
+        scheduleWordCloud();
+      },
+      err => {
+        if (ordered && err.code === 'failed-precondition') {
+          // Index not ready yet — retry without orderBy
+          commentUnsub?.();
+          attachCommentListener(false);
+        } else {
+          console.error('Comments listener error:', err);
+        }
+      }
+    );
+  };
+  attachCommentListener(true);
 }
 
 // ?? Render helpers ????????????????????????????????????????????????????????????
