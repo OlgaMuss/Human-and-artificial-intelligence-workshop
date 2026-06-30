@@ -540,10 +540,13 @@ function toggleReveal() {
 }
 
 function nextCard() {
-  if (!session?.activeCardId) return;
-  const todo = [...(session.todoCards || [])];
-  const done = [...(session.doneCards || []), session.activeCardId];
-  const next = todo.shift() || null;
+  const activeId = session?.activeCardId;
+  if (!activeId) return;
+
+  // Explicitly exclude active card from todo (guards against any stale state)
+  const todo = (session.todoCards || []).filter(c => c !== activeId);
+  const done = [...(session.doneCards || []), activeId];
+  const next = todo.length > 0 ? todo.shift() : null;
 
   db.collection('session').doc('main').update({
     activeCardId: next,
