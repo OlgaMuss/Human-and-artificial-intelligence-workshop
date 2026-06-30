@@ -4,7 +4,55 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>H&A Workshop  Host</title>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js">
+// Sessions panel
+function toggleSessionsPanel() {
+  const panel = document.getElementById('sessions-panel');
+  panel.classList.toggle('open');
+  if (panel.classList.contains('open')) loadSessionsList();
+}
+
+function loadSessionsList() {
+  db.collection('sessions').get().then(snap => {
+    const sessions = snap.docs.map(d => d.data())
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    renderSessionsList(sessions);
+  }).catch(console.error);
+}
+
+function renderSessionsList(sessions) {
+  const list = document.getElementById('sessions-list');
+  if (sessions.length === 0) {
+    list.innerHTML = '<p class="sessions-empty">No saved sessions yet.</p>';
+    return;
+  }
+  list.innerHTML = sessions.map(s => {
+    const done  = (s.doneCards || []).length;
+    const total = done + (s.todoCards || []).length + (s.activeCardId ? 1 : 0);
+    const date  = s.createdAt?.toDate
+      ? s.createdAt.toDate().toLocaleString()
+      : s.sessionId.slice(1);
+    const isActive = s.sessionId === session?.sessionId;
+    return `<div class="session-item${isActive ? ' active-session' : ''}" onclick="openSession('${s.sessionId}')">
+      <div class="s-label">${date}${isActive ? '  (current)' : ''}</div>
+      <div class="s-meta">${done} / ${total} cards done${s.sessionEnded ? ' · ended' : ' · in progress'}</div>
+    </div>`;
+  }).join('');
+}
+
+function openSession(sid) {
+  db.collection('sessions').doc(sid).get().then(snap => {
+    if (!snap.exists) return;
+    const saved = snap.data();
+    db.collection('session').doc('main').set({
+      ...saved,
+      sessionEnded: false,
+    }).catch(console.error);
+    document.getElementById('sessions-panel').classList.remove('open');
+  }).catch(console.error);
+}
+
+</script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
   <style>
@@ -174,6 +222,27 @@
       flex: 1; display: flex; align-items: center; justify-content: center;
       color: #444; font-size: 14px; flex-direction: column; gap: 8px;
     }
+
+    /* Sessions panel */
+    .btn-sessions { background: #34495e; color: #fff; }
+    .sessions-panel {
+      position: fixed; bottom: 52px; left: 10px;
+      background: #16213e; border: 1px solid #0f3460; border-radius: 10px;
+      padding: 14px; min-width: 300px; max-height: 340px;
+      overflow-y: auto; z-index: 150; display: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .sessions-panel.open { display: block; }
+    .sessions-panel h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 10px; }
+    .session-item {
+      padding: 10px 12px; border-radius: 8px; cursor: pointer;
+      background: #0f3460; margin-bottom: 6px; transition: background 0.15s;
+    }
+    .session-item:hover { background: #1a4a7a; }
+    .session-item .s-label { font-size: 13px; font-weight: 600; color: #ccc; }
+    .session-item .s-meta  { font-size: 11px; color: #555; margin-top: 3px; }
+    .session-item.active-session { border: 1px solid #5c6bc0; }
+    .sessions-empty { font-size: 12px; color: #444; }
   </style>
 </head>
 <body>
@@ -253,6 +322,7 @@
 <!-- Controls -->
 <div class="controls">
   <button id="btn-session" class="btn btn-start" onclick="toggleSession()">Start Session</button>
+  <button id="btn-sessions" class="btn btn-sessions" onclick="toggleSessionsPanel()">Sessions</button>
   <button id="btn-reveal"  class="btn btn-reveal" onclick="toggleReveal()" disabled>Reveal Votes</button>
   <button id="btn-next"    class="btn btn-next"   onclick="nextCard()"     disabled>Mark as Done - Next</button>
   <span class="controls-info" id="controls-info"></span>
@@ -338,18 +408,35 @@ function toggleSession() {
 }
 
 function initSession() {
+  // Archive current session before overwriting
+  if (session?.sessionId) {
+    db.collection('sessions').doc(session.sessionId)
+      .set({ ...session, savedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .catch(console.error);
+  }
+
   const sessionId = 'S' + Date.now();
-  db.collection('session').doc('main').set({
+  const newSession = {
     sessionId,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     activeCardId: null,
     revealVotes:  false,
     todoCards:    [...CARD_ORDER],
     doneCards:    [],
     sessionEnded: false,
-  }).catch(console.error);
+  };
+
+  db.collection('sessions').doc(sessionId).set(newSession).catch(console.error);
+  db.collection('session').doc('main').set(newSession).catch(console.error);
 }
 
 function endSession() {
+  if (session?.sessionId) {
+    db.collection('sessions').doc(session.sessionId).set({
+      ...session, activeCardId: null, sessionEnded: true,
+      savedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }).catch(console.error);
+  }
   db.collection('session').doc('main').update({
     activeCardId: null,
     sessionEnded: true,
@@ -641,5 +728,11 @@ function escapeHtml(s) {
 // Re-render word cloud on window resize
 window.addEventListener('resize', () => { wcDirty = true; scheduleWordCloud(); });
 </script>
+
+<!-- Sessions panel -->
+<div class="sessions-panel" id="sessions-panel">
+  <h4>Sessions</h4>
+  <div id="sessions-list"><p class="sessions-empty">No saved sessions yet.</p></div>
+</div>
 </body>
 </html>
