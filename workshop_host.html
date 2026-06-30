@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>H&A Workshop ˇ Host</title>
+  <title>H&A Workshop ù Host</title>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
@@ -58,6 +58,8 @@
       flex-shrink: 0;
     }
     .queue-thumb:hover { opacity: 0.9; }
+    .done-queue .queue-thumb { opacity: 0.45; }
+    .done-queue .queue-thumb:hover { opacity: 0.85; border: 2px solid #7986cb; }
     .queue-empty { font-size: 12px; color: #444; text-align: center; margin-top: 20px; }
 
     /* ?? Center zone ??????????????????????????????????? */
@@ -235,7 +237,7 @@
     <div class="feedback-zone">
       <div class="comments-panel">
         <div class="panel-label">Comments (<span id="comment-count">0</span>)</div>
-        <div id="comments-list"><p class="no-comments">No comments yetˇ</p></div>
+        <div id="comments-list"><p class="no-comments">No comments yetù</p></div>
       </div>
       <div class="wordcloud-panel">
         <div class="panel-label">Word Cloud</div>
@@ -262,7 +264,7 @@
 
 <script>
 // ?? FIREBASE CONFIG ???????????????????????????????????????????????????????????
-// Same config as vote page ˇ fill in your Firebase project details.
+// Same config as vote page ù fill in your Firebase project details.
 const firebaseConfig = {
   apiKey:            "AIzaSyAQqNOABaF2IIYe28zxKnjHHZRCn6tZPlw",
   authDomain:        "human-and-ai-workshop.firebaseapp.com",
@@ -372,7 +374,7 @@ function loadActiveCard(id) {
   wrap.dataset.cardId = id || '';
   wrap.innerHTML = id
     ? `<img src="${CARD_IMG(id)}" alt="${id}">`
-    : `<div class="placeholder">No active card ˇ click one in the To Do queue</div>`;
+    : `<div class="placeholder">No active card ù click one in the To Do queue</div>`;
 
   // Reset per-card state
   votes    = { highRisk: 0, itDepends: 0, beneficial: 0 };
@@ -421,7 +423,7 @@ function renderQueues() {
   const doneList = document.getElementById('done-list');
   doneList.innerHTML = done.length === 0
     ? '<p class="queue-empty">None yet</p>'
-    : done.map(id => `<img class="queue-thumb" src="${CARD_IMG(id)}" title="${id}" style="opacity:0.4;">`).join('');
+    : done.map(id => `<img class="queue-thumb" src="${CARD_IMG(id)}" title="${id}" style="opacity:0.4;" onclick="activateCard('${id}')">`).join('');
 }
 
 function renderControls() {
@@ -473,7 +475,7 @@ function renderComments() {
   document.getElementById('comment-count').textContent = comments.length;
 
   if (comments.length === 0) {
-    list.innerHTML = '<p class="no-comments">No comments yetˇ</p>';
+    list.innerHTML = '<p class="no-comments">No comments yetù</p>';
     return;
   }
   list.innerHTML = comments
@@ -514,7 +516,7 @@ function renderWordCloud() {
     ctx.fillStyle = '#444';
     ctx.font = '13px system-ui';
     ctx.textAlign = 'center';
-    ctx.fillText('Waiting for commentsˇ', canvas.width / 2, canvas.height / 2);
+    ctx.fillText('Waiting for commentsù', canvas.width / 2, canvas.height / 2);
     return;
   }
 
@@ -557,16 +559,22 @@ function nextCard() {
 }
 
 function activateCard(id) {
-  // Move from todo to active (swap if there was already an active card)
   if (!session) return;
-  const todo = (session.todoCards || []).filter(c => c !== id);
   const activeWas = session.activeCardId;
-  if (activeWas && activeWas !== id) todo.unshift(activeWas); // push current back
+  if (activeWas === id) return; // already active
+
+  // Remove id from both todo and done (it could come from either)
+  let todo = (session.todoCards || []).filter(c => c !== id);
+  let done = (session.doneCards || []).filter(c => c !== id);
+
+  // Push current active card back to the front of todo (if there is one)
+  if (activeWas) todo.unshift(activeWas);
 
   db.collection('session').doc('main').update({
     activeCardId: id,
     revealVotes:  false,
     todoCards:    todo,
+    doneCards:    done,
   }).catch(console.error);
 }
 
