@@ -399,7 +399,6 @@ function loadActiveCard(id) {
   // Comments
   commentUnsub = db.collection('comments')
     .where('cardId', '==', id)
-    .orderBy('ts', 'asc')
     .onSnapshot(snap => {
       comments = snap.docs.map(d => d.data().text || '');
       renderComments();
